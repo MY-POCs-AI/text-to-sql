@@ -1,0 +1,18 @@
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres-ai
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: entreprise
+      POSTGRES_USER: aiuser
+      POSTGRES_PASSWORD: aiuser123
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+
+volumes:
+  postgres_data:

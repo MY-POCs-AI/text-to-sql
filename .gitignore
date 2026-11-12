@@ -1,0 +1,27 @@
+# Secrets et configuration locale
+.env
+.env.*
+
+!.env.example
+
+# Environnement Python
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Base vectorielle ChromaDB (reconstruite automatiquement)
+chroma_db/
+
+# Tests et outils
+.pytest_cache/
+.coverage
+
+# IDE et système
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
