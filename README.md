@@ -71,7 +71,7 @@ Le RAG indexe les descriptions des tables et les relations entre elles. Il perme
 ### 1. Récupérer le projet
 
 ```bash
-git clone git clone https://github.com/MY-POCs-AI/text-to-sql.git
+git clone https://github.com/MY-POCs-AI/text-to-sql.git
 cd ai-sql-agent
 ```
 
