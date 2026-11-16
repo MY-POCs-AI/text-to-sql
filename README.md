@@ -60,6 +60,7 @@ Le RAG indexe les descriptions des tables et les relations entre elles. Il perme
 
 ## Prérequis
 
+- Git
 - Python 3.12
 - Docker Engine et Docker Compose
 - Une clé API OpenAI
