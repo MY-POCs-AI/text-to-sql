@@ -104,6 +104,10 @@ cp .env.example .env
 
 Renseigner ensuite sa propre clé API OpenAI dans `.env` :
 
+```bash
+vi .env
+```
+
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
 ```
