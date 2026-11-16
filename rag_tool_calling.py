@@ -2,7 +2,6 @@ from validate_sql import validate_sql
 from search_schema import search_schema
 from execute_sql import execute_sql
 from display_results import display_results
-from validate_sql import validate_sql
 
 import os
 import json
@@ -17,9 +16,7 @@ from openai import OpenAI
 
 load_dotenv()
 
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
-)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 # ==========================================
@@ -48,37 +45,14 @@ tools = [
 
 
 # ==========================================
-# 3. QUESTION UTILISATEUR
+# 3. INSTRUCTIONS DE L'AGENT
 # ==========================================
 
-question = input("Pose ta question : ")
-
-
-# ==========================================
-# 4. RECHERCHE RAG DANS CHROMADB
-# ==========================================
-
-documents = search_schema(question)
-
-schema_context = "\n\n".join(documents)
-
-# print("\n=== CONTEXTE RAG RETROUVE ===")
-# print(schema_context)
-
-
-# ==========================================
-# 5. ENVOI DE LA QUESTION A OPENAI
-# ==========================================
-
-instructions = f"""
+BASE_INSTRUCTIONS = """
 Tu es un assistant SQL PostgreSQL.
 
 Tu dois répondre aux questions concernant les données
 de l'entreprise en utilisant l'outil execute_sql.
-
-Voici le schéma de la base de données retrouvé par le RAG :
-
-{schema_context}
 
 REGLES IMPORTANTES :
 
@@ -114,131 +88,172 @@ REGLES METIER :
 - Génère une requête SQL complète qui répond à toute la question, et non une requête intermédiaire.
 """
 
-response = client.responses.create(
-    model="gpt-5-mini",
-    instructions=instructions,
-    input=question,
-    tools=tools
-)
-
-
 
 # ==========================================
-# 6. DETECTION ET EXECUTION DE L'OUTIL
+# 4. BOUCLE PRINCIPALE
 # ==========================================
 
-for item in response.output:
+print("\n=== AI SQL AGENT ===")
+print("Tape 'quitter' pour arrêter le programme.\n")
 
-    if item.type == "function_call":
+while True:
 
-        arguments = json.loads(item.arguments)
-        sql = arguments["sql"]
+    question = input("\nPose ta question : ").strip()
 
-        # ----------------------------------
-        # VALIDATION SQL
-        # ----------------------------------
+    if question.lower() in ["quitter", "exit", "quit"]:
+        print("\nFin du programme.")
+        break
 
-        valid, message, validated_sql = validate_sql(sql)
+    if not question:
+        continue
 
-        if not valid:
+    # ==========================================
+    # 5. RECHERCHE RAG
+    # ==========================================
 
-            print("\n=== REQUETE SQL REFUSEE ===")
-            print(message)
+    documents = search_schema(question)
+    schema_context = "\n\n".join(documents)
 
-            tool_output = f"Requête SQL refusée : {message}"
-            raise SystemExit(0)
+    instructions = f"""
+{BASE_INSTRUCTIONS}
 
-        else:
+Voici le schéma de la base de données retrouvé par le RAG :
 
-            print("\n=== REQUETE SQL VALIDEE ===")
-            print(message)
+{schema_context}
+"""
 
-            print("\nRequête SQL validée :")
-            print(validated_sql)
+    # ==========================================
+    # 6. PREMIER APPEL A OPENAI
+    # ==========================================
 
-            confirmation = input(
-                "\nExécuter cette requête ? (o/n) : "
+    response = client.responses.create(
+        model="gpt-5-mini",
+        instructions=instructions,
+        input=question,
+        tools=tools
+    )
+
+    action_terminee = False
+
+    # ==========================================
+    # 7. BOUCLE DE CONVERSATION
+    # ==========================================
+
+    while True:
+
+        function_calls = [
+            item for item in response.output
+            if item.type == "function_call"
+        ]
+
+        # --------------------------------------
+        # CAS 1 : L'IA DEMANDE UNE PRECISION
+        # --------------------------------------
+
+        if not function_calls:
+
+            if action_terminee:
+                break
+
+            print("\n=== REPONSE DE L'IA ===")
+            print(response.output_text)
+
+            precision = input(
+                "\nTa précision (ou 'nouvelle' pour une autre question) : "
+            ).strip()
+
+            if precision.lower() in ["nouvelle", "/new"]:
+                break
+
+            if precision.lower() in ["quitter", "exit", "quit"]:
+                print("\nFin du programme.")
+                raise SystemExit(0)
+
+            if not precision:
+                continue
+
+            response = client.responses.create(
+                model="gpt-5-mini",
+                instructions=instructions,
+                previous_response_id=response.id,
+                input=precision,
+                tools=tools
             )
 
-            if confirmation.lower() == "o":
+            continue
 
-                results = execute_sql(validated_sql)
+        # --------------------------------------
+        # CAS 2 : L'IA APPELLE L'OUTIL SQL
+        # --------------------------------------
 
-                # Affichage des résultats dans le terminal
-                display_results(results)
+        tool_outputs = []
 
-                # Transmission des résultats à OpenAI
-                tool_output = json.dumps(
-                    results,
-                    ensure_ascii=False,
-                    default=str
-                )
+        for item in function_calls:
+
+            arguments = json.loads(item.arguments)
+            sql = arguments["sql"]
+
+            # Validation SQL
+            valid, message, validated_sql = validate_sql(sql)
+
+            if not valid:
+
+                print("\n=== REQUETE SQL REFUSEE ===")
+                print(message)
+
+                tool_output = f"Requête SQL refusée : {message}"
 
             else:
 
-                tool_output = "Exécution annulée par l'utilisateur."
+                print("\n=== REQUETE SQL VALIDEE ===")
+                print(message)
 
-        # print("\nRésultat SQL :")
-        # print(tool_output)
+                print("\nRequête SQL validée :")
+                print(validated_sql)
 
-        # -------------------------------------------------------------------------------
-        # RETOUR DES RESULTATS A OPENAI // Text et Calcul généré par le LLM:Moins fiable
-        # -------------------------------------------------------------------------------
+                confirmation = input(
+                    "\nExécuter cette requête ? (o/n) : "
+                ).strip().lower()
 
-        # second_response = client.responses.create(
-        #     model="gpt-5-mini",
-        #     previous_response_id=response.id,
-        #     input=[
-        #         {
-        #             "type": "function_call_output",
-        #             "call_id": item.call_id,
-        #             "output": tool_output
-        #         }
-        #     ],
-        #     tools=tools
-        # )
+                if confirmation == "o":
 
-        # print("\n=== REPONSE FINALE DE L'IA ===")
-        # print(second_response.output_text)
+                    results = execute_sql(validated_sql)
 
+                    display_results(results)
 
-        print("\n=== RESULTAT FINAL ===")
-
-        if results:
-            # Cas 1 : montant global calculé par SQL
-            if "chiffre_affaires_total" in results[0]:
-                montant = results[0]["chiffre_affaires_total"]
-                print(f"Chiffre d'affaires total : {montant:,.2f} €")
-
-            # Cas 2 : montant calculé pour chaque commande
-            elif "montant_total" in results[0] and "commande_id" in results[0]:
-                montant_cumule = sum(
-                    row["montant_total"] or 0 for row in results
-                )
-
-                print(f"{len(results)} commande(s) trouvée(s).\n")
-
-                for row in results:
-                    print(
-                        f"Commande {row['commande_id']} : "
-                        f"{row['montant_total']:,.2f} €"
+                    tool_output = json.dumps(
+                        results,
+                        ensure_ascii=False,
+                        default=str
                     )
 
-                print(f"\nMontant cumulé : {montant_cumule:,.2f} €")
+                    action_terminee = True
 
-            # Cas 3 : résultat générique
-            else:
-                print(f"{len(results)} résultat(s) retourné(s).")
+                else:
 
-        else:
-            print("Aucun résultat trouvé.")
+                    print("\nExécution annulée.")
 
+                    tool_output = "Exécution annulée par l'utilisateur."
 
-# ==========================================
-# 7. SI AUCUN OUTIL N'A ETE APPELE
-# ==========================================
+                    action_terminee = True
 
-if not any(item.type == "function_call" for item in response.output):
+            tool_outputs.append({
+                "type": "function_call_output",
+                "call_id": item.call_id,
+                "output": tool_output
+            })
 
-    print("\n=== REPONSE DE L'IA ===")
-    print(response.output_text)
+        # --------------------------------------
+        # 8. RETOUR DES RESULTATS A OPENAI
+        # --------------------------------------
+
+        if action_terminee:
+            break
+
+        response = client.responses.create(
+            model="gpt-5-mini",
+            instructions=instructions,
+            previous_response_id=response.id,
+            input=tool_outputs,
+            tools=tools
+        )
