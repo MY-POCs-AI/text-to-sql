@@ -168,6 +168,12 @@ docker compose down
 
 Cette commande arrête les conteneurs sans supprimer le volume contenant les données PostgreSQL.
 
+## Sortir de l'environnement python
+
+```bash
+deactivate
+```
+
 ## Objectif du projet
 
 Explorer la conception d'agents IA capables d'interagir avec des systèmes existants, en combinant RAG, génération SQL, validation technique et contrôle humain.
