@@ -16,8 +16,25 @@ from openai import OpenAI
 
 load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 
+if LLM_PROVIDER == "openai":
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+elif LLM_PROVIDER == "anthropic":
+    from anthropic import Anthropic
+    client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+elif LLM_PROVIDER == "google":
+    from google import genai
+    client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+
+elif LLM_PROVIDER == "mistral":
+    from mistralai import Mistral
+    client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
+
+else:
+    raise ValueError(f"Fournisseur LLM non supporté : {LLM_PROVIDER}")
 
 # ==========================================
 # 2. DEFINITION DE L'OUTIL SQL

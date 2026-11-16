@@ -112,6 +112,44 @@ Les paramètres PostgreSQL de démonstration sont déjà renseignés dans `.env.
 
 **Ne jamais publier son fichier `.env` ni sa clé API.**
 
+### Changer de fournisseur LLM
+
+Le fournisseur LLM est sélectionné grâce à la variable LLM_PROVIDER dans le fichier .env.
+De base il s'agit de OPENAI
+
+Les fournisseurs prévus sont :
+
+| Fournisseur | Valeur de `LLM_PROVIDER` | Variable de clé API |
+|---|---|---|
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+| Google Gemini | `google` | `GOOGLE_API_KEY` |
+| Mistral | `mistral` | `MISTRAL_API_KEY` |
+
+Exemple : passer d'OpenAI à Mistral
+
+Renseigner sa clé API Mistral dans .env :
+
+```env
+MISTRAL_API_KEY=your_mistral_api_key_here
+```
+
+Modifier le fournisseur :
+
+```env
+LLM_PROVIDER=mistral
+```
+
+Relancer l'agent :
+
+```bash
+python rag_tool_calling.py
+```
+
+Il n'est pas nécessaire de modifier le code pour sélectionner un autre fournisseur, une fois son intégration complète dans le projet.
+
+Remarque : chaque fournisseur possède sa propre API et son propre format de gestion des appels d'outils (tool calling). Le changement de valeur de LLM_PROVIDER sélectionne le client correspondant, mais ne suffit pas à garantir la compatibilité de toute la chaîne RAG. L'intégration de chaque fournisseur doit également être réalisée dans la partie communication avec le LLM et traitement des réponses.
+
 ## Utilisation
 
 ### 1. Indexer le schéma de la base
