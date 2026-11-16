@@ -72,7 +72,7 @@ Le RAG indexe les descriptions des tables et les relations entre elles. Il perme
 
 ```bash
 git clone https://github.com/MY-POCs-AI/text-to-sql.git
-cd ai-sql-agent
+cd text-to-sql
 ```
 
 ### 2. Démarrer PostgreSQL
