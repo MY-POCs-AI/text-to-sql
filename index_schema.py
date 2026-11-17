@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from openai import OpenAI
 from google import genai
-from mistralai import Mistral
+from mistralai.client import Mistral
 
 
 # Chargement des variables d'environnement (.env)

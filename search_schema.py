@@ -25,7 +25,7 @@ elif EMBEDDING_PROVIDER == "google":
     )
 
 elif EMBEDDING_PROVIDER == "mistral":
-    from mistralai import Mistral
+    from mistralai.client import Mistral
 
     embedding_client = Mistral(
         api_key=os.getenv("MISTRAL_API_KEY")

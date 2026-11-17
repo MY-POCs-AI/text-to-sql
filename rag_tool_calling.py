@@ -38,7 +38,7 @@ elif LLM_PROVIDER == "google":
     MODEL = "gemini-3.8-flash"
 
 elif LLM_PROVIDER == "mistral":
-    from mistralai import Mistral
+    from mistralai.client import Mistral
 
     client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
     MODEL = "mistral-small-latest"
