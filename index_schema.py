@@ -5,16 +5,38 @@ import chromadb
 
 from db_config import get_db_connection
 from dotenv import load_dotenv
+
 from openai import OpenAI
+from google import genai
+from mistralai import Mistral
 
 
 # Chargement des variables d'environnement (.env)
 load_dotenv()
 
-# Client OpenAI
-openai_client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
-)
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "openai")
+
+# Initialisation du client d'embeddings
+if EMBEDDING_PROVIDER == "openai":
+    embedding_client = OpenAI(
+        api_key=os.getenv("OPENAI_API_KEY")
+    )
+
+elif EMBEDDING_PROVIDER == "google":
+    embedding_client = genai.Client(
+        api_key=os.getenv("GOOGLE_API_KEY")
+    )
+
+elif EMBEDDING_PROVIDER == "mistral":
+    embedding_client = Mistral(
+        api_key=os.getenv("MISTRAL_API_KEY")
+    )
+
+else:
+    raise ValueError(
+        f"Fournisseur d'embeddings non supporté : {EMBEDDING_PROVIDER}"
+    )
+
 
 # Connexion à ChromaDB
 chroma_client = chromadb.PersistentClient(
@@ -113,6 +135,45 @@ def get_schema_documents():
     return documents, ids, metadatas
 
 
+def generate_embeddings(documents):
+    """
+    Génère les embeddings selon le fournisseur sélectionné.
+    """
+
+    if EMBEDDING_PROVIDER == "openai":
+
+        response = embedding_client.embeddings.create(
+            model="text-embedding-3-small",
+            input=documents
+        )
+
+        return [
+            item.embedding
+            for item in sorted(response.data, key=lambda item: item.index)
+        ]
+
+    elif EMBEDDING_PROVIDER == "google":
+
+        response = embedding_client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=documents
+        )
+
+        return [item.values for item in response.embeddings]
+
+    elif EMBEDDING_PROVIDER == "mistral":
+
+        response = embedding_client.embeddings.create(
+            model="mistral-embed",
+            inputs=documents
+        )
+
+        return [
+            item.embedding
+            for item in sorted(response.data, key=lambda item: item.index)
+        ]
+
+
 def index_schema():
 
     # 1. Extraction de la structure de la BDD
@@ -124,16 +185,8 @@ def index_schema():
         print("Aucune table trouvée.")
         return
 
-    # 2. Génération des embeddings avec OpenAI
-    response = openai_client.embeddings.create(
-        model="text-embedding-3-small",
-        input=documents
-    )
-
-    embeddings = [
-        item.embedding
-        for item in sorted(response.data, key=lambda item: item.index)
-    ]
+    # 2. Génération des embeddings
+    embeddings = generate_embeddings(documents)
 
     # 3. Enregistrement dans ChromaDB
     collection.upsert(

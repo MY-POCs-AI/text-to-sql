@@ -1,13 +1,13 @@
-from validate_sql import validate_sql
-from search_schema import search_schema
-from execute_sql import execute_sql
-from display_results import display_results
 
 import os
 import json
 
 from dotenv import load_dotenv
-from openai import OpenAI
+
+from validate_sql import validate_sql
+from search_schema import search_schema
+from execute_sql import execute_sql
+from display_results import display_results
 
 
 # ==========================================
@@ -19,46 +19,101 @@ load_dotenv()
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 
 if LLM_PROVIDER == "openai":
+    from openai import OpenAI
+
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    MODEL = "gpt-5-mini"
 
 elif LLM_PROVIDER == "anthropic":
     from anthropic import Anthropic
+
     client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    MODEL = "claude-opus-5-5"
 
 elif LLM_PROVIDER == "google":
     from google import genai
+    from google.genai import types
+
     client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+    MODEL = "gemini-3.8-flash"
 
 elif LLM_PROVIDER == "mistral":
     from mistralai import Mistral
+
     client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
+    MODEL = "mistral-small-latest"
 
 else:
-    raise ValueError(f"Fournisseur LLM non supporté : {LLM_PROVIDER}")
+    raise ValueError(
+        f"Fournisseur LLM non supporté : {LLM_PROVIDER}"
+    )
+
 
 # ==========================================
 # 2. DEFINITION DE L'OUTIL SQL
 # ==========================================
 
-tools = [
-    {
-        "type": "function",
-        "name": "execute_sql",
-        "description": "Execute une requete SQL SELECT sur PostgreSQL et retourne les resultats.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "sql": {
-                    "type": "string",
-                    "description": "La requete SQL SELECT a executer."
-                }
-            },
-            "required": ["sql"],
-            "additionalProperties": False
-        },
-        "strict": True
-    }
-]
+TOOL_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "sql": {
+            "type": "string",
+            "description": "La requête SQL SELECT à exécuter."
+        }
+    },
+    "required": ["sql"],
+    "additionalProperties": False
+}
+
+
+if LLM_PROVIDER == "openai":
+
+    tools = [
+        {
+            "type": "function",
+            "name": "execute_sql",
+            "description": "Exécute une requête SQL SELECT sur PostgreSQL et retourne les résultats.",
+            "parameters": TOOL_PARAMETERS,
+            "strict": True
+        }
+    ]
+
+elif LLM_PROVIDER == "anthropic":
+
+    tools = [
+        {
+            "name": "execute_sql",
+            "description": "Exécute une requête SQL SELECT sur PostgreSQL et retourne les résultats.",
+            "input_schema": TOOL_PARAMETERS
+        }
+    ]
+
+elif LLM_PROVIDER == "google":
+
+    tools = [
+        types.Tool(
+            function_declarations=[
+                types.FunctionDeclaration(
+                    name="execute_sql",
+                    description="Exécute une requête SQL SELECT sur PostgreSQL et retourne les résultats.",
+                    parameters=TOOL_PARAMETERS
+                )
+            ]
+        )
+    ]
+
+elif LLM_PROVIDER == "mistral":
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "execute_sql",
+                "description": "Exécute une requête SQL SELECT sur PostgreSQL et retourne les résultats.",
+                "parameters": TOOL_PARAMETERS
+            }
+        }
+    ]
 
 
 # ==========================================
@@ -107,7 +162,259 @@ REGLES METIER :
 
 
 # ==========================================
-# 4. BOUCLE PRINCIPALE
+# 4. FONCTIONS DE COMMUNICATION AVEC LE LLM
+# ==========================================
+
+def start_conversation(question, instructions):
+
+    if LLM_PROVIDER == "openai":
+
+        conversation = {}
+
+        response = client.responses.create(
+            model=MODEL,
+            instructions=instructions,
+            input=question,
+            tools=tools
+        )
+
+    elif LLM_PROVIDER == "anthropic":
+
+        conversation = {
+            "messages": [
+                {"role": "user", "content": question}
+            ]
+        }
+
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=4096,
+            system=instructions,
+            messages=conversation["messages"],
+            tools=tools
+        )
+
+    elif LLM_PROVIDER == "google":
+
+        conversation = {
+            "chat": client.chats.create(
+                model=MODEL,
+                config=types.GenerateContentConfig(
+                    system_instruction=instructions,
+                    tools=tools
+                )
+            )
+        }
+
+        response = conversation["chat"].send_message(question)
+
+    elif LLM_PROVIDER == "mistral":
+
+        conversation = {
+            "messages": [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": question}
+            ]
+        }
+
+        response = client.chat.complete(
+            model=MODEL,
+            messages=conversation["messages"],
+            tools=tools
+        )
+
+    return conversation, response
+
+
+def continue_conversation(conversation, response, user_input=None, tool_results=None):
+
+    if LLM_PROVIDER == "openai":
+
+        if tool_results is not None:
+
+            response_input = [
+                {
+                    "type": "function_call_output",
+                    "call_id": call["id"],
+                    "output": output
+                }
+                for call, output in tool_results
+            ]
+
+        else:
+            response_input = user_input
+
+        return client.responses.create(
+            model=MODEL,
+            instructions=current_instructions,
+            previous_response_id=response.id,
+            input=response_input,
+            tools=tools
+        )
+
+    elif LLM_PROVIDER == "anthropic":
+
+        conversation["messages"].append({
+            "role": "assistant",
+            "content": response.content
+        })
+
+        if tool_results is not None:
+
+            content = [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": call["id"],
+                    "content": output
+                }
+                for call, output in tool_results
+            ]
+
+        else:
+            content = user_input
+
+        conversation["messages"].append({
+            "role": "user",
+            "content": content
+        })
+
+        return client.messages.create(
+            model=MODEL,
+            max_tokens=4096,
+            system=current_instructions,
+            messages=conversation["messages"],
+            tools=tools
+        )
+
+    elif LLM_PROVIDER == "google":
+
+        if tool_results is not None:
+
+            parts = [
+                types.Part.from_function_response(
+                    name="execute_sql",
+                    response={"result": output}
+                )
+                for call, output in tool_results
+            ]
+
+            return conversation["chat"].send_message(parts)
+
+        return conversation["chat"].send_message(user_input)
+
+    elif LLM_PROVIDER == "mistral":
+
+        conversation["messages"].append(
+            response.choices[0].message.model_dump(exclude_unset=True)
+        )
+
+        if tool_results is not None:
+
+            for call, output in tool_results:
+
+                conversation["messages"].append({
+                    "role": "tool",
+                    "name": "execute_sql",
+                    "tool_call_id": call["id"],
+                    "content": output
+                })
+
+        else:
+
+            conversation["messages"].append({
+                "role": "user",
+                "content": user_input
+            })
+
+        return client.chat.complete(
+            model=MODEL,
+            messages=conversation["messages"],
+            tools=tools
+        )
+
+
+# ==========================================
+# 5. NORMALISATION DES REPONSES
+# ==========================================
+
+def get_tool_calls(response):
+
+    calls = []
+
+    if LLM_PROVIDER == "openai":
+
+        for item in response.output:
+
+            if item.type == "function_call":
+                calls.append({
+                    "id": item.call_id,
+                    "arguments": json.loads(item.arguments)
+                })
+
+    elif LLM_PROVIDER == "anthropic":
+
+        for item in response.content:
+
+            if item.type == "tool_use":
+                calls.append({
+                    "id": item.id,
+                    "arguments": item.input
+                })
+
+    elif LLM_PROVIDER == "google":
+
+        for part in response.candidates[0].content.parts:
+
+            if part.function_call:
+                calls.append({
+                    "id": part.function_call.id or part.function_call.name,
+                    "arguments": dict(part.function_call.args)
+                })
+
+    elif LLM_PROVIDER == "mistral":
+
+        message = response.choices[0].message
+
+        for item in message.tool_calls or []:
+
+            arguments = item.function.arguments
+
+            if isinstance(arguments, str):
+                arguments = json.loads(arguments)
+
+            calls.append({
+                "id": item.id,
+                "arguments": arguments
+            })
+
+    return calls
+
+
+def get_response_text(response):
+
+    if LLM_PROVIDER == "openai":
+        return response.output_text or ""
+
+    elif LLM_PROVIDER == "anthropic":
+
+        return "\n".join(
+            item.text
+            for item in response.content
+            if item.type == "text"
+        )
+
+    elif LLM_PROVIDER == "google":
+        return response.text or ""
+
+    elif LLM_PROVIDER == "mistral":
+
+        content = response.choices[0].message.content
+
+        return content if isinstance(content, str) else ""
+
+
+# ==========================================
+# 6. BOUCLE PRINCIPALE
 # ==========================================
 
 print("\n=== AI SQL AGENT ===")
@@ -125,13 +432,13 @@ while True:
         continue
 
     # ==========================================
-    # 5. RECHERCHE RAG
+    # 7. RECHERCHE RAG
     # ==========================================
 
     documents = search_schema(question)
     schema_context = "\n\n".join(documents)
 
-    instructions = f"""
+    current_instructions = f"""
 {BASE_INSTRUCTIONS}
 
 Voici le schéma de la base de données retrouvé par le RAG :
@@ -140,28 +447,23 @@ Voici le schéma de la base de données retrouvé par le RAG :
 """
 
     # ==========================================
-    # 6. PREMIER APPEL A OPENAI
+    # 8. PREMIER APPEL AU LLM
     # ==========================================
 
-    response = client.responses.create(
-        model="gpt-5-mini",
-        instructions=instructions,
-        input=question,
-        tools=tools
+    conversation, response = start_conversation(
+        question,
+        current_instructions
     )
 
     action_terminee = False
 
     # ==========================================
-    # 7. BOUCLE DE CONVERSATION
+    # 9. BOUCLE DE CONVERSATION
     # ==========================================
 
     while True:
 
-        function_calls = [
-            item for item in response.output
-            if item.type == "function_call"
-        ]
+        function_calls = get_tool_calls(response)
 
         # --------------------------------------
         # CAS 1 : L'IA DEMANDE UNE PRECISION
@@ -173,7 +475,7 @@ Voici le schéma de la base de données retrouvé par le RAG :
                 break
 
             print("\n=== REPONSE DE L'IA ===")
-            print(response.output_text)
+            print(get_response_text(response))
 
             precision = input(
                 "\nTa précision (ou 'nouvelle' pour une autre question) : "
@@ -189,12 +491,10 @@ Voici le schéma de la base de données retrouvé par le RAG :
             if not precision:
                 continue
 
-            response = client.responses.create(
-                model="gpt-5-mini",
-                instructions=instructions,
-                previous_response_id=response.id,
-                input=precision,
-                tools=tools
+            response = continue_conversation(
+                conversation,
+                response,
+                user_input=precision
             )
 
             continue
@@ -203,12 +503,11 @@ Voici le schéma de la base de données retrouvé par le RAG :
         # CAS 2 : L'IA APPELLE L'OUTIL SQL
         # --------------------------------------
 
-        tool_outputs = []
+        tool_results = []
 
-        for item in function_calls:
+        for call in function_calls:
 
-            arguments = json.loads(item.arguments)
-            sql = arguments["sql"]
+            sql = call["arguments"]["sql"]
 
             # Validation SQL
             valid, message, validated_sql = validate_sql(sql)
@@ -219,6 +518,8 @@ Voici le schéma de la base de données retrouvé par le RAG :
                 print(message)
 
                 tool_output = f"Requête SQL refusée : {message}"
+
+                tool_results.append((call, tool_output))
 
             else:
 
@@ -238,39 +539,23 @@ Voici le schéma de la base de données retrouvé par le RAG :
 
                     display_results(results)
 
-                    tool_output = json.dumps(
-                        results,
-                        ensure_ascii=False,
-                        default=str
-                    )
-
                     action_terminee = True
 
                 else:
 
                     print("\nExécution annulée.")
 
-                    tool_output = "Exécution annulée par l'utilisateur."
-
                     action_terminee = True
 
-            tool_outputs.append({
-                "type": "function_call_output",
-                "call_id": item.call_id,
-                "output": tool_output
-            })
-
         # --------------------------------------
-        # 8. RETOUR DES RESULTATS A OPENAI
+        # 10. RETOUR DES ERREURS AU LLM
         # --------------------------------------
 
         if action_terminee:
             break
 
-        response = client.responses.create(
-            model="gpt-5-mini",
-            instructions=instructions,
-            previous_response_id=response.id,
-            input=tool_outputs,
-            tools=tools
+        response = continue_conversation(
+            conversation,
+            response,
+            tool_results=tool_results
         )

@@ -4,3 +4,8 @@ psycopg[binary]==3.3.8
 python-dotenv==1.2.4
 rich==15.0.0
 sqlglot==30.31.0
+
+# LLM providers
+anthropic
+google-genai
+mistralai
