@@ -119,6 +119,8 @@ Les paramètres PostgreSQL de démonstration sont déjà renseignés dans `.env.
 
 ### Changer de fournisseur LLM
 
+ATTENTION: Ce projet n'a été testé qu'avec OpenAI!!
+
 Le fournisseur LLM est sélectionné grâce à la variable LLM_PROVIDER dans le fichier .env.
 
 De base il s'agit d'OpenAI.
