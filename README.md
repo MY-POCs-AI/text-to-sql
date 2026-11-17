@@ -99,11 +99,7 @@ pip install -r requirements.txt
 
 ### 5. Configurer les variables d'environnement
 
-```bash
-cp .env.example .env
-```
-
-Renseigner ensuite sa propre clé API OpenAI dans `.env` :
+Renseigner sa propre clé API OpenAI dans `.env` :
 
 ```bash
 vi .env
